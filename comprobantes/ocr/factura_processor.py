@@ -33,17 +33,22 @@ def extract_tipo_comprobante(texto):
     return "Desconocido"
 
 def extract_numero_comprobante(texto):
-    """Extrae el número de comprobante."""
+    """Extrae el número de comprobante en distintos formatos."""
     match = re.search(
-        r"(?:Nro\.?\s*(?:Comp\.?:\s*)?(\d{4}-\d{6,8}))|(?:P\.V\.?\s*N°\s*(\d+)\s*T\.\s*(\d+))", 
+        r"(?:Nro[._]?\s*(\d{4,5})\s*-?\s*(\d{6,8}))"  # Formato: "Nro. 02646 - 00115536" o "Nro_ 02646 00115836"
+        r"|(?:Nro\.?\s*(?:Comp\.?:\s*)?(\d{4}-\d{6,8}))"  # Formato: "Nro. Comp.: 02646-00115536"
+        r"|(?:P\.V\.?\s*N°\s*(\d+)\s*T\.\s*(\d+))",  # Formato: "P.V. N° 02646 T. 00115536"
         texto, re.IGNORECASE
     )
-    # Se asume que el grupo 2 contiene el número si existe
+
     if match:
-        if match.group(1):
-            return match.group(1)
-        elif match.group(2) and match.group(3):
-            return f"{match.group(2)} T. {match.group(3)}"
+        if match.group(1) and match.group(2):
+            return f"{match.group(1)}-{match.group(2)}"  # Unir con guion si se capturaron por separado
+        elif match.group(3):  
+            return match.group(3)  # Formato "Nro. Comp.: 02646-00115536"
+        elif match.group(4) and match.group(5):
+            return f"{match.group(4)} T. {match.group(5)}"  # Formato "P.V. N° 02646 T. 00115536"
+
     return "Desconocido"
 
 def extract_fecha_emision(texto):
@@ -52,6 +57,7 @@ def extract_fecha_emision(texto):
       - "Fecha: 15/07/2024"
       - "Fecha de Emisión: 15/07/2024"
       - "Fecha de Vencimiento: 15/07/2024"
+      - "Fecha: 22/03/25"
     """
     match = re.search(
         r"(?:Fecha(?: de (?:Emisión|Vencimiento))?:?\s*)(\d{2}/\d{2}/\d{4}|\d{2}/\d{2}/\d{2})",
@@ -60,13 +66,14 @@ def extract_fecha_emision(texto):
     )
     return match.group(1) if match else "Desconocido"
 
+
 def extract_cuit_emisor(texto):
     """Extrae el CUIT del emisor."""
     match = re.search(
-        r"(C\.U\.I\.T\.?\s*[:\s]*\d{2}-\d{8}-\d{1}|\d{11})", 
+        r"(?:C\.U\.I\.T\.?|CUIT|CUIT Nro\.?)\s*[:\s]*([\d\-]{13}|\d{11})", 
         texto, re.IGNORECASE
     )
-    return match.group(0) if match else "Desconocido"
+    return match.group(1) if match else "Desconocido"
 
 def extract_nombre_emisor(texto):
     """
@@ -148,13 +155,16 @@ def extract_total(texto):
       - "TOTAL                     4.000.000,22"
       - "Total Factura: 1234,56"
       - "TOTAL: 1,234.56"
+      - "TOTAL $ 9087 , 00"
+      - "T@7A 9087,00"
     
-    Se captura tanto el formato con puntos y comas (4.000.000,22) como el formato con comas y puntos (1,234.56).
+    Se captura tanto el formato con puntos y comas (4.000.000,22) como el formato con comas y puntos (1,234.56),
+    y también el formato con el símbolo de peso o caracteres extra.
     
     Retorna el importe encontrado o "Desconocido" si no se halla coincidencia.
     """
     match = re.search(
-        r"(?:TOTAL|Importe Total|Total Factura)[:\s]*([\d\.,]+)", 
+        r"(?:TOTAL|Importe Total|Total Factura|T@7A)[:\s]*[$]?\s?([\d\.,]+)", 
         texto, re.IGNORECASE
     )
     return match.group(1).strip() if match else "Desconocido"
