@@ -40,9 +40,9 @@ def deskew(imagen_gris):
 # 2. Funciones de mejora de imagen
 # -----------------------------------------------------------------------------------
 def mejorar_contraste(imagen_gris):
+    equalized = cv2.equalizeHist(imagen_gris)
     clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(8, 8))
-    equalized = cv2.equalizeHist(imagen_gris) # <--- Aquí se usa equalizeHist
-    return clahe.apply(imagen_gris) # <--- Pero se devuelve el resultado de CLAHE
+    return clahe.apply(imagen_gris)
 
 def reducir_ruido(imagen_gris):
     bilateral = cv2.bilateralFilter(imagen_gris, d=5, sigmaColor=100, sigmaSpace=5)
@@ -69,12 +69,19 @@ def engrosar_texto(imagen_binaria):
 def preprocesar_imagen_mejorado(imagen_bgr):
     try:
         imagen_gris = cv2.cvtColor(imagen_bgr, cv2.COLOR_BGR2GRAY)
-        imagen_contraste_clahe = mejorar_contraste(imagen_gris) # Aquí mejorar_contraste devuelve CLAHE aplicado
-        imagen_suavizada = reducir_ruido(imagen_contraste_clahe)
+        imagen_suavizada = reducir_ruido(imagen_gris)
         imagen_binaria = binarizar_imagen(imagen_suavizada)
-        imagen_enderezada = deskew(imagen_binaria) # El deskew opera sobre imagen binaria
+        imagen_contraste_clahe = mejorar_contraste(imagen_binaria)
+        """
+            esto no funciona empeora la imagen cada vez que la pasa por algun filtro
+            imagen_gris = cv2.cvtColor(imagen_bgr, cv2.COLOR_BGR2GRAY)
+            imagen_contraste_clahe = mejorar_contraste(imagen_gris) # Aquí mejorar_contraste devuelve CLAHE aplicado
+            imagen_suavizada = reducir_ruido(imagen_bgr)
+            imagen_binaria = binarizar_imagen(imagen_bgr)
+            imagen_enderezada = deskew(imagen_binaria) # El deskew opera sobre imagen binaria
 
-        return imagen_enderezada
+        """
+        return imagen_gris
     except Exception as e:
         logging.error(f"Error en preprocesar_imagen_mejorado: {e}")
         return imagen_bgr  # Devuelve la imagen original si hay un error
