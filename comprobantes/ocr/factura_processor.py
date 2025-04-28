@@ -20,35 +20,32 @@ def extract_tipo_comprobante(texto):
 
     Retorna solo el número del comprobante o el tipo de factura (A, B, C, etc.).
     """
-    # Intentar capturar "Facturas 001", "Codigo 006", etc.
-    match = re.search(r"(?:Facturas|Codigo|Cod\.?|COD\.?|Cód\.)\s*(\d+)", texto, re.IGNORECASE)
+    match = re.search(r"(?:Factura|Ticket|T[i1]cket)\s*[A-Z]?", texto, re.IGNORECASE)
     if match:
-        return match.group(1)
-
-    # Intentar capturar "FACTURA A", "FACTURA B", etc.
-    match = re.search(r"FACTURA\s+([A-Z])", texto, re.IGNORECASE)
-    if match:
-        return f"Factura {match.group(1)}"
-
+        return match.group(0).strip()
     return "Desconocido"
 
 def extract_numero_comprobante(texto):
     """Extrae el número de comprobante en distintos formatos."""
+    match = re.search(r"(?:Nro\.?|N[o°]\.?)\s*[T\.?]\s*(\d+)", texto, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    match = re.search(r"(?:Mo\.?T\.?)\s*(\d+)", texto, re.IGNORECASE) # Captura "Mo.T.00135246"
+    if match:
+        return match.group(1)
     match = re.search(
-        r"(?:Nro[._]?\s*(\d{4,5})\s*-?\s*(\d{6,8}))"  # Formato: "Nro. 02646 - 00115536" o "Nro_ 02646 00115836"
-        r"|(?:Nro\.?\s*(?:Comp\.?:\s*)?(\d{4}-\d{6,8}))"  # Formato: "Nro. Comp.: 02646-00115536"
-        r"|(?:P\.V\.?\s*N°\s*(\d+)\s*T\.\s*(\d+))",  # Formato: "P.V. N° 02646 T. 00115536"
+        r"(?:Nro[._]?\s*(\d{3,5})\s*[-_\s]?\s*(\d{6,8}))"
+        r"|(?:Nro\.?\s*(?:Comp\.?[:\s]*)?(\d{3,5}[-_\s]\d{6,8}))"
+        r"|(?:P\.?V\.?\s*N[o°]\s*(\d+)\s*T\.?\s*(\d+))",
         texto, re.IGNORECASE
     )
-
     if match:
         if match.group(1) and match.group(2):
-            return f"{match.group(1)}-{match.group(2)}"  # Unir con guion si se capturaron por separado
-        elif match.group(3):  
-            return match.group(3)  # Formato "Nro. Comp.: 02646-00115536"
+            return f"{match.group(1)}-{match.group(2)}"
+        elif match.group(3):
+            return match.group(3).replace('-', '-').replace('_', '-').replace(' ', '-')
         elif match.group(4) and match.group(5):
-            return f"{match.group(4)} T. {match.group(5)}"  # Formato "P.V. N° 02646 T. 00115536"
-
+            return f"{match.group(4)} T. {match.group(5)}"
     return "Desconocido"
 
 def extract_fecha_emision(texto):
@@ -59,21 +56,31 @@ def extract_fecha_emision(texto):
       - "Fecha de Vencimiento: 15/07/2024"
       - "Fecha: 22/03/25"
     """
-    match = re.search(
-        r"(?:Fecha(?: de (?:Emisión|Vencimiento))?:?\s*)(\d{2}/\d{2}/\d{4}|\d{2}/\d{2}/\d{2})",
-        texto,
-        re.IGNORECASE
-    )
-    return match.group(1) if match else "Desconocido"
+    match = re.search(r"(?:F[Ee][Cc]ha)\s*(\d{2}[-/\s]\d{2}[-/\s]\d{2,4})", texto, re.IGNORECASE)
+    if match:
+        fecha = match.group(1).replace('-', '/').replace(' ', '/')
+        if len(fecha.split('/')[2]) == 2:
+            año_corto = fecha.split('/')[2]
+            año_completo = f"20{año_corto}" if int(año_corto) <= 25 else f"19{año_corto}"
+            return f"{fecha.split('/')[0]}/{fecha.split('/')[1]}/{año_completo}"
+        return fecha
+    return "Desconocido"
 
+def extract_hora_emision(texto):
+    match = re.search(r"(?:Hora)\s*(\d{2}[:;]\d{2}[:;]\d{2})", texto, re.IGNORECASE)
+    if match:
+        return match.group(1).replace(';', ':')
+    return "Desconocido"
 
 def extract_cuit_emisor(texto):
     """Extrae el CUIT del emisor."""
-    match = re.search(
-        r"(?:C\.U\.I\.T\.?|CUIT|CUIT Nro\.?)\s*[:\s]*([\d\-]{13}|\d{11})", 
-        texto, re.IGNORECASE
-    )
-    return match.group(1) if match else "Desconocido"
+    match = re.search(r"(?:C[uU][iI][tT])[:\s]*Nros?[:\s]*([\d]{11,13})", texto, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    match = re.search(r"([\d]{2}-[\d]{8}-[\d]{1})", texto) # Otro formato común
+    if match:
+        return match.group(0)
+    return "Desconocido"
 
 def extract_nombre_emisor(texto):
     """
@@ -84,26 +91,24 @@ def extract_nombre_emisor(texto):
     Retorna el nombre encontrado o "Desconocido" si no se halla coincidencia.
     """
     # Intentar extraer usando "Razón Social:"
-    match = re.search(r"Raz[oó]n Social:?\s*([A-Za-z0-9\s\.,\-&]+)", texto, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
-    
-    # Definir una expresión regular que agrupe las abreviaturas de sociedades
-    sociedades = r"(?:S\.A\.|S\.L\.|S\.R\.L\.|S\.C\.P\.|S\.A\.C\.|E\.I\.R\.L\.|S\.p\.A\.|S\.r\.l\.|S\.a\.s\.?|S\.n\.c\.|Coop\.|S\.L\.L\.)"
-    # Buscar una cadena que contenga alguna de estas abreviaturas
-    match = re.search(r"([A-Za-z0-9\s\.,\-&]+"+sociedades+r")", texto, re.IGNORECASE)
-    if match:
-        return match.group(0).strip()
-    
+    lineas = texto.splitlines()
+    for linea in lineas:
+        linea = linea.strip()
+        if linea.isupper() and len(linea.split()) > 1:
+            return linea
+        elif re.search(r"^[A-Z][a-z]+", linea): # Empieza con mayúscula
+            return linea
     return "Desconocido"
 
 def extract_cuit_receptor(texto):
     """Extrae el CUIT del receptor."""
     match = re.search(
-        r"(CUIT:?\s*\d{2}-\d{8}-\d{1}|\d{11})", 
+        r"(CUIT[:\s]*[\d\-_]{2}-[\d\-_]{8}-[\d\-_]{1}|\d{11})",
         texto, re.IGNORECASE
     )
-    return match.group(0) if match else "Desconocido"
+    if match:
+        return match.group(0).replace('-', '')
+    return "Desconocido"
 
 def extract_nombre_receptor(texto):
     """
@@ -114,35 +119,29 @@ def extract_nombre_receptor(texto):
     
     Retorna el nombre encontrado o "Desconocido" si no hay coincidencias.
     """
-    # Intentar extraer desde "Cliente: NOMBRE (DNI/CUIT)"
-    match = re.search(r"Cliente:\s*([A-Za-z\s]+)\s*\(\d+\)", texto, re.IGNORECASE)
+    match = re.search(r"Cliente[:\s]*([A-Za-z\s]+)\s*\(?\d+[^\)]*\)?", texto, re.IGNORECASE)
     if match:
         return match.group(1).strip()
-    
-    # Intentar extraer desde "Apellido y Nombre: NOMBRE"
-    match = re.search(r"Apellido y Nombre:?\s*([A-Za-z\s]+)", texto, re.IGNORECASE)
+    match = re.search(r"(?:Apellido\s*y\s*Nombre|Nombre)\s*[:\s]*([A-Za-z\s]+)", texto, re.IGNORECASE)
     if match:
         return match.group(1).strip()
-
-    # Intentar extraer desde "Razón Social: EMPRESA XYZ S.A."
-    match = re.search(r"Raz[oó]n Social:?\s*([A-Za-z0-9\s\.,\-&]+)", texto, re.IGNORECASE)
+    # Buscar líneas que contengan "A CONSUMIDOR FINAL" o similar
+    match = re.search(r"(A\s+CONSUMIDOR\s+FINAL)", texto, re.IGNORECASE)
     if match:
-        return match.group(1).strip()
-    
+        return match.group(1)
     return "Desconocido"
 
 def extract_condicion_iva(texto):
     """Extrae la condición de IVA."""
-    match = re.search(
-        r"(Responsable Inscripto|Responsable Monotributo|IVA\s*[\d\.]+)", 
-        texto, re.IGNORECASE
-    )
-    return match.group(0) if match else "Desconocido"
+    match = re.search(r"(?:IvA|IVA)\s*(?:Respoksable|Responsable)\s*(?:InscripTo|Inscripto)", texto, re.IGNORECASE)
+    if match:
+        return "Responsable Inscripto"
+    return "Desconocido"
 
 def extract_condicion_venta(texto):
     """Extrae la condición de venta."""
     match = re.search(
-        r"(Contado|Crédito|Financiación|Débito Automático)", 
+        r"(Contado|Cr[eé]dito|Financiaci[oó]n|D[eé]bito\s*Autom[aá]tico)",
         texto, re.IGNORECASE
     )
     return match.group(0) if match else "Desconocido"
@@ -163,19 +162,15 @@ def extract_total(texto):
     
     Retorna el importe encontrado o "Desconocido" si no se halla coincidencia.
     """
-    match = re.search(
-        r"(?:TOTAL|Importe Total|Total Factura|T@7A)[:\s]*[$]?\s?([\d\.,]+)", 
-        texto, re.IGNORECASE
-    )
-    return match.group(1).strip() if match else "Desconocido"
+    match = re.search(r"(?:Total)\s*([\d\.,]+)", texto, re.IGNORECASE)
+    if match:
+        return match.group(1).replace('.', '').replace(',', '.')
+    return "Desconocido"
 
 def extract_moneda(texto):
     """Extrae la moneda (por defecto 'ARS')."""
-    match = re.search(
-        r"(Importe Total:\s*(\w+))", 
-        texto, re.IGNORECASE
-    )
-    return match.group(2) if match and match.group(2) else "ARS"
+    match = re.search(r"(?:TOTAL\s*(\w+))", texto, re.IGNORECASE) # Buscar moneda cerca de "TOTAL"
+    return match.group(1) if match else "ARS"
 
 def extract_cae(texto):
     """
@@ -188,7 +183,7 @@ def extract_cae(texto):
     Retorna el número del CAE o "Desconocido" si no se encuentra.
     """
     match = re.search(
-        r"(?:C\.?A\.?E\.?\s*:?|CAE N°:?\s*)(\d{14})", 
+        r"(?:C\.?\s*A\.?\s*E\.?[:\s]*|CAE\s*N[o°][:.\s]*)(\d{14})",
         texto, re.IGNORECASE
     )
     return match.group(1).strip() if match else "Desconocido"
@@ -202,11 +197,12 @@ def extract_fecha_vencimiento_cae(texto):
 
     Retorna la fecha en formato DD/MM/YYYY o "Desconocido" si no se encuentra.
     """
-    match = re.search(
-        r"(?:Fecha de Vencimiento CAE|Fec\.? Venc\.)\s*:? (\d{2}/\d{2}/\d{4})", 
+    match = re.search(r"(?:Fecha\s*de\s*Vencimiento\s*CAE|Fec\.?\s*Venc\.?)[:\s]*(\d{2}[-/\s]\d{2}[-/\s]\d{4})",
         texto, re.IGNORECASE
     )
-    return match.group(1).strip() if match else "Desconocido"
+    if match:
+        return match.group(1).replace('-', '/').replace(' ', '/')
+    return "Desconocido"
 
 def extract_detalles(texto):
     """
@@ -215,26 +211,26 @@ def extract_detalles(texto):
     Este regex es un ejemplo y puede necesitar ajustes según el formato.
     """
     detalles = []
-    productos = re.findall(r"([A-Za-z\s]+)\s*([0-9]+)\s*([0-9\.,]+)", texto)
-    for producto in productos:
-        detalles.append({
-            "producto": producto[0].strip(),
-            "cantidad": producto[1],
-            "precio": producto[2]
-        })
+    lineas = texto.splitlines()
+    for linea in lineas:
+        match = re.search(r"(\d+[\.,]?\d*)\s*[xX]\s*([\d\.,]+)\s+([A-Za-z0-9\s\.\-,]+)", linea)
+        if match:
+            cantidad = match.group(1).replace('.', '').replace(',', '.')
+            precio_unitario = match.group(2).replace('.', '').replace(',', '.')
+            descripcion = match.group(3).strip()
+            detalles.append({"cantidad": cantidad, "precio_unitario": precio_unitario, "descripcion": descripcion})
+        else:
+            match = re.search(r"([A-Za-z0-9\s\.\-,]+)\s+([\d\.,]+)", linea)
+            if match:
+                descripcion = match.group(1).strip()
+                precio = match.group(2).replace('.', '').replace(',', '.')
+                detalles.append({"cantidad": "1", "precio": precio, "descripcion": descripcion})
     return detalles
-
 # =============================
 # Función principal para procesar la factura
 # =============================
 
 def procesar_factura(texto_extraido, error=None):
-    """
-    Procesa el texto extraído de una factura y retorna un diccionario con:
-      - comprobante_data: Datos generales de la factura.
-      - detalles_data: Lista de productos o detalles encontrados.
-    En caso de error o texto vacío, retorna un diccionario de error.
-    """
     if not texto_extraido or not texto_extraido.strip():
         return {"error": error or "No se pudo extraer texto de la imagen"}
 
@@ -265,22 +261,40 @@ def procesar_factura(texto_extraido, error=None):
 # Ejemplo de uso
 # =============================
 if __name__ == "__main__":
-    # Supongamos que 'texto_extraido' es el resultado obtenido por OCR o extracción nativa del PDF.
-    texto_extraido = """
-    Facturas
-    Nro. Comp.: 4001-00054017
-    Fecha de Emisión: 15/07/2024
-    C.U.I.T.: 30-53284754-7
-    Razón Social: Bazar Avenida S.A.
-    CUIT: 30-53284754-7
-    Apellido y Nombre: BAUDUCCO LUCAS
-    Responsable Inscripto
-    Condición de Venta: Contado
-    TOTAL Importe Total: 449.999,00
-    CAE N°: 74297978398739
-    Fecha de Vencimiento CAE: 25/07/2024
-    ProductoX 1 449.999,00
+    texto_extraido_ticket = """
+    2 -CARREFOUR-
+    VICENTE LOPEZ.
+    Orientacion al Consumidor Pcia
+    de Bs.As 0800-222-9042
+    INC S.A.
+    CUIT Nro.: 30-68731043-4
+    Av Libertador 215 - Vte. Lope.
+    Pcia. Bs.As(B1638PEB)
+    IVA RESPONSABLE INSCRIPTO
+    A CONSUMIDOR FINAL
+    P.V. Nro.: 0153          Nro. T. 00220314
+    Fecha 17/03/19           Hora 10:48:36
+    MERMELADA DE ROSA MO
+    SQUEIA EL BROCAL X 4          159.00
+    7798088960363
+    2.0000 x 120,0000
+    PAN ARTESANAL BIMBO
+    X 500 GRS                    240.00
+    7796989008542
+    2do60%-PAN BLAN-BIM          -72.00
+    BONIF.                       29.37
+    RECARGO VISA 2 CUOTAS CON
+    TOTAL                       355,37
+    VISA                        355.37
+    Suma de sus pagos           355.37
+    Su Vuelto                     0.00
+    BONIF. PROMOCIONES           72.00
+    Articulos 3
+    Cajero 33-Carrizo Graciela
+    0034 0002 017 033    17 03 19 10 50 AC-00
+            V: 22.00 Hera
+    2527  Registro Nro.: PE01003516
     """
-    resultado = procesar_factura(texto_extraido)
-    print("Resultado de procesamiento de la factura:")
-    print(resultado)
+    resultado_ticket = procesar_factura(texto_extraido_ticket)
+    print("\nResultado del procesamiento del ticket:")
+    print(resultado_ticket)
